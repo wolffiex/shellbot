@@ -1,23 +1,17 @@
-use anyhow::{anyhow, Result};
-use futures::{StreamExt, TryStreamExt};
+use anyhow::Error;
+use futures::StreamExt;
 use regex::Regex;
 use reqwest::header::{HeaderMap, HeaderValue};
 use reqwest::{Client, RequestBuilder};
 use serde::{Deserialize, Serialize};
-use tokio::io::{stdout, AsyncWriteExt};
 use tokio::sync::mpsc::{self, Receiver, Sender};
 
 const MODEL: &str = "gpt-3.5-turbo";
 // const MODEL = "gpt-4";
-pub async fn make_streamed_request<'a>(
-    api_key: &str,
-    messages: Vec<ChatMessage>,
-) -> Receiver<String> {
+pub fn stream_response<'a>(api_key: &str, messages: Vec<ChatMessage>) -> Receiver<String> {
     let client = get_client(api_key, messages);
     let (sender, receiver) = mpsc::channel(100);
-    tokio::spawn(async move {
-        send_response(client, sender).await
-    });
+    tokio::spawn(async move { send_response(client, sender).await });
     return receiver;
 }
 
@@ -42,50 +36,60 @@ fn get_client(api_key: &str, messages: Vec<ChatMessage>) -> RequestBuilder {
 }
 
 async fn send_response(client: RequestBuilder, sender: Sender<String>) {
-    let stream = client
-        .send()
-        .await
-        .expect("Request failed")
-        .bytes_stream();
+    let stream = client.send().await.expect("Request failed").bytes_stream();
 
     // Server-sent events match from beginning of line
     let match_event = Regex::new(r"^(\w+):(.*)$").unwrap();
     stream
         .for_each(|chunk_result| async {
-            let maybe_messages: Result<String> = chunk_result
-                .map_err(|err| anyhow!("Stream error {:?}", err))
+            let messages: String = chunk_result
+                .map_err(Error::from)
                 .and_then(|chunk| {
                     std::str::from_utf8(&chunk)
-                        .map(|s| s.to_owned())
-                        .map_err(|err| anyhow!("Encoding error {:?}", err))
-                });
+                        .map(String::from)
+                        .map_err(Error::from)
+                })
+                .expect("Stream or encoding error");
 
-            let result: Result<Vec<ChatEvent>> = maybe_messages.and_then(|messages| {
-                assert!(
-                    messages.ends_with("\n\n"),
-                    "Chunks are expected to end with two newline characters."
-                );
-                messages
-                    .split("\n\n")
-                    .map(|message| -> Result<ChatEvent> {
-                        match_event
-                            .captures(message)
-                            .ok_or(anyhow!("No match for {}", message))
-                            .and_then(|captures| match &captures[1] {
-                                "data" => {
-                                    serde_json::from_str::<ChatEvent>(&captures[2]).map_err(|err| {
-                                        anyhow!("Deserialization error {} in {}", err, &captures[2])
-                                    })
-                                }
-                                event_name => Err(anyhow!("Unrecognized event {}", event_name)),
-                            })
-                    })
-                    .collect()
-            });
+            assert!(
+                messages.ends_with("\n\n"),
+                "Chunks are expected to end with two newline characters."
+            );
+            let chat_events: Vec<ChatEvent> = messages
+                .split("\n\n")
+                .filter(|split| !split.is_empty())
+                .filter_map(|message| {
+                    let captures = match_event
+                        .captures(&message)
+                        .unwrap_or_else(|| panic!("No match for |{}|", message));
+                    match &captures[1] {
+                        "data" => match captures[2].trim(){
+                            "[DONE]" => None,
+                            event_json => serde_json::from_str::<ChatEvent>(event_json)
+                                .map(Some)
+                                .unwrap_or_else(|err| {
+                                    panic!("Deserialization error {:?} in |{}|", err, &captures[2])
+                                }),
+                        },
+                        event_name => panic!("Unrecognized event {}", event_name),
+                    }
+                })
+                .collect();
+
+            let tokens: Vec<String> = chat_events
+                .into_iter()
+                .filter_map(|event| event.choices[0].delta.content.clone())
+                .collect();
+            for token in tokens {
+                sender
+                    .send(token)
+                    .await
+                    .unwrap_or_else(|_| panic!("Failed to send token"));
+            }
         })
         .await;
 }
-    // let mut out = stdout();
+// let mut out = stdout();
 // while let Some(chunk_result) = stream.next().await {
 //     let chunk_string = std::str::from_utf8(&chunk_result?)?.to_owned();
 //     assert!(

@@ -1,12 +1,11 @@
 mod api;
-use api::{make_streamed_request, ChatMessage};
+use api::{stream_response, ChatMessage};
 use std::io::{self, Read};
-use tokio;
+use tokio::{self, io::stdout, io::AsyncWriteExt};
 
 #[tokio::main]
 async fn main() {
     let mut input = String::new();
-    println!("ready?");
     io::stdin().read_to_string(&mut input).unwrap();
 
     let api_key = std::env::var("OPENAI_API_KEY")
@@ -14,10 +13,13 @@ async fn main() {
         .expect("No API key provided");
     let messages = vec![get_system_prompt(), ChatMessage::new("user", &input)];
 
-    match make_streamed_request(&api_key, messages).await {
-        Ok(()) => (),
-        Err(err) => eprintln!("Error: {}", err),
-    };
+    let mut receiver = stream_response(&api_key, messages);
+
+    let mut out = stdout();
+    while let Some(token) = receiver.recv().await {
+        out.write_all(token.as_bytes()).await.unwrap();
+        out.flush().await.unwrap();
+    }
 }
 
 fn get_system_prompt() -> ChatMessage {
