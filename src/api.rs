@@ -38,8 +38,6 @@ fn get_client(api_key: &str, messages: Vec<ChatMessage>) -> RequestBuilder {
 async fn send_response(client: RequestBuilder, sender: Sender<String>) {
     let stream = client.send().await.expect("Request failed").bytes_stream();
 
-    // Server-sent events match from beginning of line
-    let match_event = Regex::new(r"^(\w+):(.*)$").unwrap();
     stream
         .for_each(|chunk_result| async {
             let messages: String = chunk_result
@@ -51,36 +49,7 @@ async fn send_response(client: RequestBuilder, sender: Sender<String>) {
                 })
                 .expect("Stream or encoding error");
 
-            assert!(
-                messages.ends_with("\n\n"),
-                "Chunks are expected to end with two newline characters."
-            );
-            let chat_events: Vec<ChatEvent> = messages
-                .split("\n\n")
-                .filter(|split| !split.is_empty())
-                .filter_map(|message| {
-                    let captures = match_event
-                        .captures(&message)
-                        .unwrap_or_else(|| panic!("No match for |{}|", message));
-                    match &captures[1] {
-                        "data" => match captures[2].trim() {
-                            "[DONE]" => None,
-                            event_json => serde_json::from_str::<ChatEvent>(event_json)
-                                .map(Some)
-                                .unwrap_or_else(|err| {
-                                    panic!("Deserialization error {:?} in |{}|", err, &captures[2])
-                                }),
-                        },
-                        event_name => panic!("Unrecognized event {}", event_name),
-                    }
-                })
-                .collect();
-
-            let tokens: Vec<String> = chat_events
-                .into_iter()
-                .filter_map(|event| event.choices[0].delta.content.clone())
-                .collect();
-            for token in tokens {
+            for token in convert_messages(messages) {
                 sender
                     .send(token)
                     .await
@@ -89,32 +58,39 @@ async fn send_response(client: RequestBuilder, sender: Sender<String>) {
         })
         .await;
 }
-// let mut out = stdout();
-// while let Some(chunk_result) = stream.next().await {
-//     let chunk_string = std::str::from_utf8(&chunk_result?)?.to_owned();
-//     assert!(
-//         chunk_string.ends_with("\n\n"),
-//         "Chunks are expected to end with two newline characters."
-//     );
+fn convert_messages(messages: String) -> Vec<String> {
+    assert!(
+        messages.ends_with("\n\n"),
+        "Chunks are expected to end with two newline characters."
+    );
 
-//     let messages = chunk_string.split("\n\n");
-//     let tokens : Vec<String> = messages
-//         .filter_map(|line| match_event.captures(line.trim()))
-//         .map(|captures| match &captures[1] {
-//             "data" => serde_json::from_str(&captures[2])
-//                 .map_err(|err| anyhow!("Deserialization error {} in {}", err, &captures[2])),
-//             event_name => Err(anyhow!("Unrecognized event {}", event_name)),
-//         })
-//         .collect::<Result<Vec<String>>>()?;
-
-//     for token in tokens {
-//         out.write_all(token.as_bytes()).await?;
-//     }
-//     out.flush().await?;
-// }
-
-// Ok(())
-// }
+    // Server-sent events match from beginning of line
+    let match_event = Regex::new(r"^(\w+):(.*)$").unwrap();
+    let chat_events: Vec<ChatEvent> = messages
+        .split("\n\n")
+        .filter(|split| !split.is_empty())
+        .filter_map(|message| {
+            let captures = match_event
+                .captures(&message)
+                .unwrap_or_else(|| panic!("No match for |{}|", message));
+            match &captures[1] {
+                "data" => match captures[2].trim() {
+                    "[DONE]" => None,
+                    event_json => serde_json::from_str::<ChatEvent>(event_json)
+                        .map(Some)
+                        .unwrap_or_else(|err| {
+                            panic!("Deserialization error {:?} in |{}|", err, &captures[2])
+                        }),
+                },
+                event_name => panic!("Unrecognized event {}", event_name),
+            }
+        })
+        .collect();
+    chat_events
+        .into_iter()
+        .filter_map(|event| event.choices[0].delta.content.clone())
+        .collect()
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ChatMessage {
