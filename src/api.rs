@@ -1,14 +1,27 @@
-use anyhow::{anyhow, Error as AHError, Result};
+use anyhow::{anyhow, Result};
 use futures::{StreamExt, TryStreamExt};
 use regex::Regex;
 use reqwest::header::{HeaderMap, HeaderValue};
-use reqwest::Client;
+use reqwest::{Client, RequestBuilder};
 use serde::{Deserialize, Serialize};
 use tokio::io::{stdout, AsyncWriteExt};
+use tokio::sync::mpsc::{self, Receiver, Sender};
 
 const MODEL: &str = "gpt-3.5-turbo";
 // const MODEL = "gpt-4";
-pub async fn make_streamed_request<'a>(api_key: &str, messages: Vec<ChatMessage>) -> Result<()> {
+pub async fn make_streamed_request<'a>(
+    api_key: &str,
+    messages: Vec<ChatMessage>,
+) -> Receiver<String> {
+    let client = get_client(api_key, messages);
+    let (sender, receiver) = mpsc::channel(100);
+    tokio::spawn(async move {
+        send_response(client, sender).await
+    });
+    return receiver;
+}
+
+fn get_client(api_key: &str, messages: Vec<ChatMessage>) -> RequestBuilder {
     let client = Client::new();
     let url = "https://api.openai.com/v1/chat/completions";
     let mut headers = HeaderMap::new();
@@ -25,46 +38,79 @@ pub async fn make_streamed_request<'a>(api_key: &str, messages: Vec<ChatMessage>
         stream: true,
         messages,
     };
+    client.post(url).headers(headers).json(&request)
+}
 
-    let mut stream = client
-        .post(url)
-        .headers(headers)
-        .json(&request)
+async fn send_response(client: RequestBuilder, sender: Sender<String>) {
+    let stream = client
         .send()
         .await
-        .map_err(|err| anyhow!("request failed: {}", err))?
-        .bytes_stream()
-        .map_err(|err| anyhow!("stream error: {}", err));
+        .expect("Request failed")
+        .bytes_stream();
 
     // Server-sent events match from beginning of line
     let match_event = Regex::new(r"^(\w+):(.*)$").unwrap();
-    let mut out = stdout();
-    while let Some(chunk_result) = stream.next().await {
-        let chunk_string = std::str::from_utf8(&chunk_result?)?.to_owned();
-        assert!(
-            chunk_string.ends_with("\n\n"),
-            "Chunks are expected to end with two newline characters."
-        );
+    stream
+        .for_each(|chunk_result| async {
+            let maybe_messages: Result<String> = chunk_result
+                .map_err(|err| anyhow!("Stream error {:?}", err))
+                .and_then(|chunk| {
+                    std::str::from_utf8(&chunk)
+                        .map(|s| s.to_owned())
+                        .map_err(|err| anyhow!("Encoding error {:?}", err))
+                });
 
-        let messages = chunk_string.split("\n\n");
-        let events = messages
-            .filter_map(|line| match_event.captures(line.trim()))
-            .map(|captures| match &captures[1] {
-                "data" => serde_json::from_str(&captures[2])
-                    .map_err(|err| anyhow!("Deserialization error {} in {}", err, &captures[2])),
-                event_name => Err(anyhow!("Unrecognized event {}", event_name)),
-            })
-            .collect::<Result<Vec<ChatEvent>>>()?;
-        for event in events {
-            if let Some(content) = &event.choices[0].delta.content {
-                out.write_all(content.to_string().as_bytes()).await?;
-            }
-        }
-        out.flush().await?;
-    }
-
-    Ok(())
+            let result: Result<Vec<ChatEvent>> = maybe_messages.and_then(|messages| {
+                assert!(
+                    messages.ends_with("\n\n"),
+                    "Chunks are expected to end with two newline characters."
+                );
+                messages
+                    .split("\n\n")
+                    .map(|message| -> Result<ChatEvent> {
+                        match_event
+                            .captures(message)
+                            .ok_or(anyhow!("No match for {}", message))
+                            .and_then(|captures| match &captures[1] {
+                                "data" => {
+                                    serde_json::from_str::<ChatEvent>(&captures[2]).map_err(|err| {
+                                        anyhow!("Deserialization error {} in {}", err, &captures[2])
+                                    })
+                                }
+                                event_name => Err(anyhow!("Unrecognized event {}", event_name)),
+                            })
+                    })
+                    .collect()
+            });
+        })
+        .await;
 }
+    // let mut out = stdout();
+// while let Some(chunk_result) = stream.next().await {
+//     let chunk_string = std::str::from_utf8(&chunk_result?)?.to_owned();
+//     assert!(
+//         chunk_string.ends_with("\n\n"),
+//         "Chunks are expected to end with two newline characters."
+//     );
+
+//     let messages = chunk_string.split("\n\n");
+//     let tokens : Vec<String> = messages
+//         .filter_map(|line| match_event.captures(line.trim()))
+//         .map(|captures| match &captures[1] {
+//             "data" => serde_json::from_str(&captures[2])
+//                 .map_err(|err| anyhow!("Deserialization error {} in {}", err, &captures[2])),
+//             event_name => Err(anyhow!("Unrecognized event {}", event_name)),
+//         })
+//         .collect::<Result<Vec<String>>>()?;
+
+//     for token in tokens {
+//         out.write_all(token.as_bytes()).await?;
+//     }
+//     out.flush().await?;
+// }
+
+// Ok(())
+// }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ChatMessage {
