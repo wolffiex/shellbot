@@ -8,9 +8,7 @@ async fn main() {
     let mut input = String::new();
     io::stdin().read_to_string(&mut input).unwrap();
 
-    let api_key = std::env::var("OPENAI_API_KEY")
-        .ok()
-        .expect("No API key provided");
+    let api_key = std::env::var("OPENAI_API_KEY").expect("No API key provided");
     let messages = vec![get_system_prompt(), ChatMessage::new("user", &input)];
 
     let mut receiver = stream_response(&api_key, messages);
@@ -20,6 +18,8 @@ async fn main() {
         out.write_all(token.as_bytes()).await.unwrap();
         out.flush().await.unwrap();
     }
+    // Append newline to end of output
+    println!();
 }
 
 fn get_system_prompt() -> ChatMessage {
