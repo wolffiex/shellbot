@@ -1,5 +1,6 @@
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Error as AHError, Result};
 use futures::{StreamExt, TryStreamExt};
+use regex::Regex;
 use reqwest::header::{HeaderMap, HeaderValue};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -35,24 +36,31 @@ pub async fn make_streamed_request<'a>(api_key: &str, messages: Vec<ChatMessage>
         .bytes_stream()
         .map_err(|err| anyhow!("stream error: {}", err));
 
-    let mut buffer = String::new();
-
-    let data_event = "data: ";
+    // Server-sent events match from beginning of line
+    let match_event = Regex::new(r"^(\w+):(.*)$").unwrap();
     let mut out = stdout();
     while let Some(chunk_result) = stream.next().await {
-        buffer.push_str(std::str::from_utf8(&chunk_result?)?);
-        if let Some(pos) = buffer.find(data_event) {
-            buffer = buffer[pos + data_event.len()..].to_owned();
-            if let Some(end) = buffer.find("\n\n") {
-                let message = buffer[..end].trim().to_owned();
-                let my_data: ChatEvent = serde_json::from_str(&message).unwrap();
-                if let Some(content) = &my_data.choices[0].delta.content {
-                    out.write_all(content.to_string().as_bytes()).await?;
-                    out.flush().await?;
-                }
-                buffer = buffer[end + 2..].to_owned();
+        let chunk_string = std::str::from_utf8(&chunk_result?)?.to_owned();
+        assert!(
+            chunk_string.ends_with("\n\n"),
+            "Chunks are expected to end with two newline characters."
+        );
+
+        let messages = chunk_string.split("\n\n");
+        let events = messages
+            .filter_map(|line| match_event.captures(line.trim()))
+            .map(|captures| match &captures[1] {
+                "data" => serde_json::from_str(&captures[2])
+                    .map_err(|err| anyhow!("Deserialization error {} in {}", err, &captures[2])),
+                event_name => Err(anyhow!("Unrecognized event {}", event_name)),
+            })
+            .collect::<Result<Vec<ChatEvent>>>()?;
+        for event in events {
+            if let Some(content) = &event.choices[0].delta.content {
+                out.write_all(content.to_string().as_bytes()).await?;
             }
         }
+        out.flush().await?;
     }
 
     Ok(())
