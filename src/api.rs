@@ -63,7 +63,7 @@ async fn send_response(client: RequestBuilder, sender: Sender<String>) {
                         .captures(&message)
                         .unwrap_or_else(|| panic!("No match for |{}|", message));
                     match &captures[1] {
-                        "data" => match captures[2].trim(){
+                        "data" => match captures[2].trim() {
                             "[DONE]" => None,
                             event_json => serde_json::from_str::<ChatEvent>(event_json)
                                 .map(Some)
