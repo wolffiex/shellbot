@@ -966,6 +966,7 @@ name = "shellbot"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bytes",
  "eventsource-client",
  "futures",
  "regex",

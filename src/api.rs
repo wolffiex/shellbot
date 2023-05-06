@@ -1,4 +1,4 @@
-use anyhow::Error;
+use bytes::Bytes;
 use futures::StreamExt;
 use regex::Regex;
 use reqwest::header::{HeaderMap, HeaderValue};
@@ -6,8 +6,8 @@ use reqwest::{Client, RequestBuilder};
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::{self, Receiver, Sender};
 
-const MODEL: &str = "gpt-3.5-turbo";
-// const MODEL = "gpt-4";
+// const MODEL: &str = "gpt-3.5-turbo";
+const MODEL: &str = "gpt-4";
 pub fn stream_response<'a>(api_key: &str, messages: Vec<ChatMessage>) -> Receiver<String> {
     let client = get_client(api_key, messages);
     let (sender, receiver) = mpsc::channel(100);
@@ -40,14 +40,7 @@ async fn send_response(client: RequestBuilder, sender: Sender<String>) {
 
     stream
         .for_each(|chunk_result| async {
-            let messages: String = chunk_result
-                .map_err(Error::from)
-                .and_then(|chunk| {
-                    std::str::from_utf8(&chunk)
-                        .map(String::from)
-                        .map_err(Error::from)
-                })
-                .expect("Stream or encoding error");
+            let messages: String = convert_chunk(chunk_result.expect("Stream error"));
 
             for token in convert_messages(messages) {
                 sender
@@ -58,6 +51,7 @@ async fn send_response(client: RequestBuilder, sender: Sender<String>) {
         })
         .await;
 }
+
 fn convert_messages(messages: String) -> Vec<String> {
     assert!(
         messages.ends_with("\n\n"),
@@ -66,7 +60,7 @@ fn convert_messages(messages: String) -> Vec<String> {
 
     // Server-sent events match from beginning of line
     let match_event = Regex::new(r"^(\w+):(.*)$").unwrap();
-    let chat_events: Vec<ChatEvent> = messages
+    messages
         .split("\n\n")
         .filter(|split| !split.is_empty())
         .filter_map(|message| {
@@ -77,7 +71,7 @@ fn convert_messages(messages: String) -> Vec<String> {
                 "data" => match captures[2].trim() {
                     "[DONE]" => None,
                     event_json => serde_json::from_str::<ChatEvent>(event_json)
-                        .map(Some)
+                        .map(|event| event.choices[0].delta.content.clone())
                         .unwrap_or_else(|err| {
                             panic!("Deserialization error {:?} in |{}|", err, &captures[2])
                         }),
@@ -85,11 +79,13 @@ fn convert_messages(messages: String) -> Vec<String> {
                 event_name => panic!("Unrecognized event {}", event_name),
             }
         })
-        .collect();
-    chat_events
-        .into_iter()
-        .filter_map(|event| event.choices[0].delta.content.clone())
         .collect()
+}
+
+fn convert_chunk(chunk: Bytes) -> String {
+    std::str::from_utf8(&chunk)
+        .map(String::from)
+        .expect("Encoding error")
 }
 
 #[derive(Debug, Serialize, Deserialize)]
