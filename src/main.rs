@@ -24,9 +24,9 @@ async fn main() {
 
 fn get_system_prompt() -> ChatMessage {
     let prompt_lines = vec![
-        "You are a helpful assistant who provides very brief explanations and short code snippets.",
-        "You do not show steps or setup instructions.",
-        "When the user provides an error message, try to explain it.",
+        "You are a helpful assistant who provides brief explanations and short code snippets",
+        "for linux command-line tools and languages like neovim, Docker, rust and python.",
+        "Your user is an expert programmer. You do not show lengthy steps or setup instructions.",
     ];
     return ChatMessage {
         role: "system".to_string(),
