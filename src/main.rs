@@ -10,7 +10,7 @@ use tokio::io::{stdout, AsyncWriteExt};
 async fn main() {
     let api_key = std::env::var("OPENAI_API_KEY").expect("No API key provided");
     let messages = structure_input();
-    println!("{:?}", messages);
+    // println!("{:?}", messages);
 
     let mut receiver = stream_response(&api_key, messages);
 
