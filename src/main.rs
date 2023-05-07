@@ -1,15 +1,16 @@
 mod api;
-use api::{stream_response, ChatMessage};
-use std::io::{self, Read};
-use tokio::{self, io::stdout, io::AsyncWriteExt};
+use api::{stream_response, ChatMessage, ChatRole};
+
+use std::io::{stdin, Read};
+use std::str::Lines;
+use tokio;
+use tokio::io::{stdout, AsyncWriteExt};
 
 #[tokio::main]
 async fn main() {
-    let mut input = String::new();
-    io::stdin().read_to_string(&mut input).unwrap();
-
     let api_key = std::env::var("OPENAI_API_KEY").expect("No API key provided");
-    let messages = vec![get_system_prompt(), ChatMessage::new("user", &input)];
+    let messages = structure_input();
+    println!("{:?}", messages);
 
     let mut receiver = stream_response(&api_key, messages);
 
@@ -22,14 +23,60 @@ async fn main() {
     println!();
 }
 
-fn get_system_prompt() -> ChatMessage {
+fn get_default_prompt() -> ChatMessage {
     let prompt_lines = vec![
         "You are a helpful assistant who provides brief explanations and short code snippets",
         "for linux command-line tools and languages like neovim, Docker, rust and python.",
         "Your user is an expert programmer. You do not show lengthy steps or setup instructions.",
     ];
     return ChatMessage {
-        role: "system".to_string(),
+        role: ChatRole::System,
         content: prompt_lines.join(" "),
     };
+}
+
+fn structure_input() -> Vec<ChatMessage> {
+    let mut input = String::new();
+    stdin().read_to_string(&mut input).unwrap();
+    let mut lines_iter = input.lines();
+    let first_line = lines_iter.next().unwrap();
+    match match_separator(first_line) {
+        None => vec![
+            get_default_prompt(),
+            ChatMessage {
+                role: ChatRole::User,
+                content: input,
+            },
+        ],
+        Some(first_role) => parse_transcript(first_role, lines_iter),
+    }
+}
+
+fn parse_transcript(first_role: ChatRole, lines: Lines) -> Vec<ChatMessage> {
+    let new_message = |role: ChatRole| ChatMessage {
+        role,
+        content: String::new(),
+    };
+    let start_message = new_message(first_role);
+    lines
+        .into_iter()
+        .fold(vec![start_message], |mut acc: Vec<ChatMessage>, line| {
+            match match_separator(line) {
+                Some(role) => acc.push(new_message(role)),
+                None => {
+                    let last = acc.last_mut().unwrap();
+                    last.content = format!("{}{}\n", last.content, line)
+                }
+            }
+            acc
+        })
+}
+
+fn match_separator(line: &str) -> Option<ChatRole> {
+    match line {
+        "===SYSTEM===" => Some(ChatRole::System),
+        "===USER===" => Some(ChatRole::User),
+        "===ASSISSTANT===" => Some(ChatRole::Assistant),
+        _ => None,
+    }
 }

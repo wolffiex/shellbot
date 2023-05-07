@@ -90,16 +90,8 @@ fn convert_chunk(chunk: Bytes) -> String {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ChatMessage {
-    pub role: String,
+    pub role: ChatRole,
     pub content: String,
-}
-impl ChatMessage {
-    pub fn new(role: &str, content: &str) -> ChatMessage {
-        ChatMessage {
-            role: role.to_string(),
-            content: content.to_string(),
-        }
-    }
 }
 
 #[derive(Debug, Serialize)]
@@ -128,4 +120,11 @@ struct Choice {
 #[derive(Debug, Deserialize, Serialize)]
 struct Delta {
     pub content: Option<String>,
+}
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(rename_all = "lowercase")]
+pub enum ChatRole {
+    User,
+    System,
+    Assistant,
 }
