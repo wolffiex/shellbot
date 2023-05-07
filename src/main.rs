@@ -57,10 +57,14 @@ fn parse_transcript(first_role: ChatRole, lines: Lines) -> Vec<ChatMessage> {
         role,
         content: String::new(),
     };
-    let start_message = new_message(first_role);
+    let initial_messages = if first_role == ChatRole::System {
+        vec![new_message(first_role)]
+    } else {
+        vec![get_default_prompt(), new_message(first_role)]
+    };
     lines
         .into_iter()
-        .fold(vec![start_message], |mut acc: Vec<ChatMessage>, line| {
+        .fold(initial_messages, |mut acc: Vec<ChatMessage>, line| {
             match match_separator(line) {
                 Some(role) => acc.push(new_message(role)),
                 None => {

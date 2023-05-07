@@ -121,7 +121,7 @@ struct Choice {
 struct Delta {
     pub content: Option<String>,
 }
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum ChatRole {
     User,
