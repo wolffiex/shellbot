@@ -31,34 +31,18 @@ while true; do
     cat "$response_file" >> "$transcript"
     rm "$response_file"
 
-    read -p "Continue? [No/yes/log]: " choice
-    choice=${choice:-no}
-
-    case $choice in
-      [nN]* | no | No | NO) exit;;
-      [lL]* | log | Log | LOG) 
-          read -p "Enter a filename: " logfile
-          cp "$transcript" "$logfile"
-          exit
-          ;;
-      [yY]* | yes | Yes | YES) 
-          printf "\033[1A"  # Move cursor one line up
-          printf "\033[K"   # Clear the line
-          echo "${padded_separator}"
-          ;;
-      *) 
-          echo "Invalid input"
-          exit 1
-          ;;
-    esac
-
+    echo "${padded_separator}"
     echo -e "🧑 $USER"
 
     input=""
     while true; do
         read -r -e line
         if [ -z "$line" ]; then
-            break
+            if [ -z "$input" ]; then
+                exit
+            else
+                break
+            fi
         fi
         input+="${line}"$'\n'
     done
