@@ -91,7 +91,6 @@ fn convert_message(message: String) -> Option<String> {
 
 fn process_buffer(input: &String) -> (Vec<String>, String) {
     let mut parts: Vec<String> = input.split("\n\n").map(String::from).collect();
-    // let mut parts: Vec<String> = input.split("\n\n").map(|s| s.to_string()).collect();
     let remainder = if input.ends_with("\n\n") {
         None
     } else {
