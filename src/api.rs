@@ -1,9 +1,10 @@
 use bytes::Bytes;
-use futures::StreamExt;
+use futures::stream::StreamExt;
 use regex::Regex;
 use reqwest::header::{HeaderMap, HeaderValue};
 use reqwest::{Client, RequestBuilder};
 use serde::{Deserialize, Serialize};
+use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc::{self, Receiver, Sender};
 
 // const MODEL: &str = "gpt-3.5-turbo";
@@ -37,12 +38,25 @@ fn get_client(api_key: &str, messages: Vec<ChatMessage>) -> RequestBuilder {
 
 async fn send_response(client: RequestBuilder, sender: Sender<String>) {
     let stream = client.send().await.expect("Request failed").bytes_stream();
+    let buffer = Arc::new(Mutex::new(String::new()));
 
     stream
-        .for_each(|chunk_result| async {
-            let messages: String = convert_chunk(chunk_result.expect("Stream error"));
-
-            for token in convert_messages(messages) {
+        .map(|chunk_result| {
+            let buffer = Arc::clone(&buffer);
+            async move {
+                let result = chunk_result.expect("Stream error");
+                let mut locked_buffer = buffer.lock().unwrap();
+                locked_buffer.push_str(&convert_chunk(result));
+                let (m, rest) = process_buffer(&locked_buffer);
+                locked_buffer.clear();
+                locked_buffer.push_str(&rest);
+                m.into_iter()
+                    .filter_map(convert_message)
+                    .collect::<Vec<_>>()
+            }
+        })
+        .for_each(|tokens| async {
+            for token in tokens.await {
                 sender
                     .send(token)
                     .await
@@ -52,34 +66,38 @@ async fn send_response(client: RequestBuilder, sender: Sender<String>) {
         .await;
 }
 
-fn convert_messages(messages: String) -> Vec<String> {
-    assert!(
-        messages.ends_with("\n\n"),
-        "Chunks are expected to end with two newline characters."
-    );
-
+fn convert_message(message: String) -> Option<String> {
+    // Empty messages are ok
+    if message == "" {
+        return None;
+    }
     // Server-sent events match from beginning of line
     let match_event = Regex::new(r"^(\w+):(.*)$").unwrap();
-    messages
-        .split("\n\n")
-        .filter(|split| !split.is_empty())
-        .filter_map(|message| {
-            let captures = match_event
-                .captures(&message)
-                .unwrap_or_else(|| panic!("No match for |{}|", message));
-            match &captures[1] {
-                "data" => match captures[2].trim() {
-                    "[DONE]" => None,
-                    event_json => serde_json::from_str::<ChatEvent>(event_json)
-                        .map(|event| event.choices[0].delta.content.clone())
-                        .unwrap_or_else(|err| {
-                            panic!("Deserialization error {:?} in |{}|", err, &captures[2])
-                        }),
-                },
-                event_name => panic!("Unrecognized event {}", event_name),
-            }
-        })
-        .collect()
+    let captures = match_event
+        .captures(&message)
+        .unwrap_or_else(|| panic!("No match for |{}|", message));
+    match &captures[1] {
+        "data" => match captures[2].trim() {
+            "[DONE]" => None,
+            event_json => serde_json::from_str::<ChatEvent>(event_json)
+                .map(|event| event.choices[0].delta.content.clone())
+                .unwrap_or_else(|err| {
+                    panic!("Deserialization error {:?} in |{}|", err, &captures[2])
+                }),
+        },
+        event_name => panic!("Unrecognized event {}", event_name),
+    }
+}
+
+fn process_buffer(input: &String) -> (Vec<String>, String) {
+    let mut parts: Vec<String> = input.split("\n\n").map(String::from).collect();
+    // let mut parts: Vec<String> = input.split("\n\n").map(|s| s.to_string()).collect();
+    let remainder = if input.ends_with("\n\n") {
+        None
+    } else {
+        parts.pop()
+    };
+    (parts, remainder.unwrap_or(String::new()))
 }
 
 fn convert_chunk(chunk: Bytes) -> String {
