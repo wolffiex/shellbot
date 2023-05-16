@@ -21,6 +21,9 @@ The included lua script can be copied to `.config/nvim/lua` and installed with s
 ```
 vim.cmd("command! ChatGPT lua require'chatgpt'.chatgpt()")
 ```
+
+This command locates the Rust binary through the `SHELLBOT` environment variable. This should be set to the absolute path of the rust binary built in the step above.
+
 This plugin is optimized to allow for streaming. It attempts to keep new input in view by repositioning the cursor at the end of the buffer as new text is appended. The plugin takes care to work in the case that the user switches away from the window where the response is coming in. To turn off the cursor movement while a response is streaming, hit "Enter" or "Space." This will free the cursor the rest of the response.
 
 ## Shell script
