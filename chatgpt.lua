@@ -1,4 +1,5 @@
 local M = {}
+local is_receiving = false
 
 local gpt_cmd = os.getenv("SHELLBOT")
 -- local gpt_cmd = "cat"
@@ -6,8 +7,8 @@ local ns_vimbot = vim.api.nvim_create_namespace("vimbot")
 
 
 local roles = {
-  USER = "🧑 " .. os.getenv('USER'),
-  ASSISSTANT = "🤖 vimbot",
+  USER = "◭🧑 " .. os.getenv('USER'),
+  ASSISSTANT = "◮🤖 vimbot",
 }
 
 local buffer_sync_cursor = {}
@@ -21,10 +22,6 @@ end
 local function add_transcript_header(winnr, bufnr, role, line_num)
   local line = ((line_num ~= nil) and line_num) or vim.api.nvim_buf_line_count(bufnr)
   vim.api.nvim_buf_set_lines(bufnr, line, line + 1, false, { roles[role] })
-  local eid = vim.api.nvim_buf_set_extmark(bufnr, ns_vimbot, line, 0, {})
-
-  local mark_data = vim.api.nvim_buf_get_var(bufnr, 'transcript_marks')
-  mark_data[eid] = role
   if role == "USER" and buffer_sync_cursor[bufnr] then
     vim.schedule(function()
       local is_current = winnr == vim.api.nvim_get_current_win()
@@ -39,7 +36,12 @@ local function add_transcript_header(winnr, bufnr, role, line_num)
   return line
 end
 
+local ChatGPTCancelJob = nil
 function ChatGPTSubmit()
+  if is_receiving then
+    print("Already receiving")
+    return
+  end
   vim.cmd("normal! Go")
   local winnr = vim.api.nvim_get_current_win()
   local bufnr = vim.api.nvim_get_current_buf()
@@ -80,22 +82,26 @@ function ChatGPTSubmit()
     end
   end
 
+  local is_interrupted = false
   local function stream_done()
     vim.api.nvim_buf_set_option(bufnr, 'modifiable', true)
-    add_transcript_header(winnr, bufnr, "USER")
+    is_receiving = false
+    if is_interrupted then
+      vim.api.nvim_buf_set_lines(bufnr, -1, -1, false, { "❌ Interrupted" })
+    else
+      add_transcript_header(winnr, bufnr, "USER")
+    end
+    is_interrupted = false
+    ChatGPTCancelJob = nil
   end
 
   local function get_transcript(separator)
     local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
-
-    local mark_data = vim.api.nvim_buf_get_var(bufnr, 'transcript_marks')
-    -- Replace marked lines with text from the marks_map
-    for extmark_id, role in pairs(mark_data) do
-      local mark_pos = vim.api.nvim_buf_get_extmark_by_id(bufnr, ns_vimbot, extmark_id, {})
-      local line_num = mark_pos[1]
-
-      if line_num ~= nil then
-        lines[line_num + 1] = separator .. role .. separator
+    for i, line in ipairs(lines) do
+      if line:match("^◭") then  -- '^' means start of line
+        lines[i] = separator .. "USER" .. separator
+      elseif line:match("^◮") then
+        lines[i] = separator .. "ASSISSTANT" .. separator
       end
     end
     return lines
@@ -107,6 +113,12 @@ function ChatGPTSubmit()
   })
 
   if job_id > 0 then
+    ChatGPTCancelJob = function()
+      is_interrupted = true
+      ChatGPTCancelJob = nil
+      vim.fn.jobstop(job_id)
+    end
+    is_receiving = true
     local transcript = get_transcript("===")
     for _, line in ipairs(transcript) do
       vim.fn.chansend(job_id, line .. "\n")
@@ -121,6 +133,8 @@ function ChatGPTSubmit()
       ':lua ChatGPTCancelCursorSync()<cr>', { noremap = true, silent = true })
     vim.api.nvim_buf_set_keymap(bufnr, 'n', '<Space>',
       ':lua ChatGPTCancelCursorSync()<cr>', { noremap = true, silent = true })
+    vim.api.nvim_buf_set_keymap(bufnr, 'n', '<C-c>',
+      ':lua ChatGPTCancelResponse()<cr>', { noremap = true, silent = true })
   else
     print("Failed to start command")
   end
@@ -131,20 +145,17 @@ end
 
 function ChatGPTNewBuf()
   vim.cmd("enew")
-  ChatGPTNew()
+  ChatGPTInit()
 end
 
-function ChatGPTNew()
-  vim.cmd("vertical resize 60")
+function ChatGPTInit()
   local winnr = vim.api.nvim_get_current_win()
   local bufnr = vim.api.nvim_get_current_buf()
-  vim.api.nvim_buf_set_var(bufnr, 'transcript_marks', {})
   buffer_sync_cursor[bufnr] = true
   vim.wo.breakindent = true
   vim.wo.wrap = true
   vim.wo.linebreak = true
   vim.api.nvim_buf_set_option(bufnr, 'buftype', 'nofile')
-  vim.api.nvim_buf_set_option(bufnr, 'buflisted', false)
   vim.api.nvim_buf_set_option(bufnr, 'bufhidden', 'hide')
   vim.api.nvim_buf_set_option(bufnr, 'swapfile', false)
   add_transcript_header(winnr, bufnr, "USER", 0)
@@ -160,7 +171,18 @@ end
 function M.chatgpt()
   vim.cmd("botright vnew")
   vim.cmd("set winfixwidth")
-  ChatGPTNew()
+  vim.cmd("vertical resize 60")
+  ChatGPTInit()
+end
+
+function M.chatgpt_init()
+  ChatGPTInit()
+end
+
+function ChatGPTCancelResponse()
+  if ChatGPTCancelJob then
+    ChatGPTCancelJob()
+  end
 end
 
 return M
