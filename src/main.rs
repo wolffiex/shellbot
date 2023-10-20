@@ -80,7 +80,7 @@ fn match_separator(line: &str) -> Option<ChatRole> {
     match line {
         "===SYSTEM===" => Some(ChatRole::System),
         "===USER===" => Some(ChatRole::User),
-        "===ASSISSTANT===" => Some(ChatRole::Assistant),
+        "===ASSISTANT===" => Some(ChatRole::Assistant),
         _ => None,
     }
 }

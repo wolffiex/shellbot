@@ -8,7 +8,7 @@ local ns_vimbot = vim.api.nvim_create_namespace("vimbot")
 
 local roles = {
   USER = "◭🧑 " .. os.getenv('USER'),
-  ASSISSTANT = "◮🤖 vimbot",
+  ASSISTANT = "◮🤖 vimbot",
 }
 
 local buffer_sync_cursor = {}
@@ -101,7 +101,7 @@ function ChatGPTSubmit()
       if line:match("^◭") then  -- '^' means start of line
         lines[i] = separator .. "USER" .. separator
       elseif line:match("^◮") then
-        lines[i] = separator .. "ASSISSTANT" .. separator
+        lines[i] = separator .. "ASSISTANT" .. separator
       end
     end
     return lines
@@ -124,7 +124,7 @@ function ChatGPTSubmit()
       vim.fn.chansend(job_id, line .. "\n")
       -- print(line)
     end
-    local line = add_transcript_header(winnr, bufnr, "ASSISSTANT")
+    local line = add_transcript_header(winnr, bufnr, "ASSISTANT")
     vim.api.nvim_buf_set_lines(bufnr, line + 1, line + 1, false, { "" })
     vim.api.nvim_buf_set_option(bufnr, 'modifiable', false)
     vim.fn.chanclose(job_id, "stdin")
