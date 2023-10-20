@@ -158,6 +158,7 @@ function ChatGPTInit()
   vim.api.nvim_buf_set_option(bufnr, 'buftype', 'nofile')
   vim.api.nvim_buf_set_option(bufnr, 'bufhidden', 'hide')
   vim.api.nvim_buf_set_option(bufnr, 'swapfile', false)
+  vim.api.nvim_buf_set_option(bufnr, 'filetype', 'shellbot')
   add_transcript_header(winnr, bufnr, "USER", 0)
   local modes = { 'n', 'i' }
   for _, mode in ipairs(modes) do
