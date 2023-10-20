@@ -23,15 +23,17 @@ async fn main() {
     println!();
 }
 
-fn get_default_prompt() -> ChatMessage {
-    let prompt_lines = vec![
+fn get_prompt() -> ChatMessage {
+    let default_prompt = vec![
         "You are a helpful assistant who provides brief explanations and short code snippets",
         "for linux command-line tools and languages like neovim, Docker, rust and python.",
         "Your user is an expert programmer. You do not show lengthy steps or setup instructions.",
-    ];
+    ]
+    .join(" ");
+    let prompt = std::env::var("SHELLBOT_PROMPT").unwrap_or(default_prompt);
     return ChatMessage {
         role: ChatRole::System,
-        content: prompt_lines.join(" "),
+        content: prompt,
     };
 }
 
@@ -42,7 +44,7 @@ fn structure_input() -> Vec<ChatMessage> {
     let first_line = lines_iter.next().unwrap();
     match match_separator(first_line) {
         None => vec![
-            get_default_prompt(),
+            get_prompt(),
             ChatMessage {
                 role: ChatRole::User,
                 content: input,
@@ -60,7 +62,7 @@ fn parse_transcript(first_role: ChatRole, lines: Lines) -> Vec<ChatMessage> {
     let initial_messages = if first_role == ChatRole::System {
         vec![new_message(first_role)]
     } else {
-        vec![get_default_prompt(), new_message(first_role)]
+        vec![get_prompt(), new_message(first_role)]
     };
     lines
         .into_iter()
