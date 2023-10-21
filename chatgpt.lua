@@ -88,9 +88,8 @@ function ChatGPTSubmit()
     is_receiving = false
     if is_interrupted then
       vim.api.nvim_buf_set_lines(bufnr, -1, -1, false, { "❌ Interrupted" })
-    else
-      add_transcript_header(winnr, bufnr, "USER")
     end
+    add_transcript_header(winnr, bufnr, "USER")
     is_interrupted = false
     ChatGPTCancelJob = nil
   end
