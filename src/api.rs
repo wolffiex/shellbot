@@ -30,14 +30,12 @@ impl ApiProvider {
     }
 }
 
-// const MODEL: &str = "gpt-3.5-turbo";
 pub fn stream_response<'a>(provider: ApiProvider, request: ChatRequest) -> Receiver<String> {
     let provider_type: ProviderType = provider.get_type();
     let request = match provider {
         ApiProvider::OpenAI(api_key) => openai::get_request(&api_key, request),
         ApiProvider::Anthropic(api_key) => anthropic::get_request(&api_key, request),
     };
-    // let client2 = anthropic::get_request(api_key, messages);
     let (sender, receiver) = mpsc::channel(100);
     tokio::spawn(async move { send_response(provider_type, request, sender).await });
     return receiver;
@@ -49,7 +47,7 @@ async fn send_response(provider: ProviderType, client: RequestBuilder, sender: S
     let sse_converter = &SseConverter::new();
 
     stream
-        .map(|chunk_result| {
+        .map(|chunk_result, buffer| {
             let buffer = Arc::clone(&buffer);
             async move {
                 let result = chunk_result.expect("Stream error");
