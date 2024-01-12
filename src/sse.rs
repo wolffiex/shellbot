@@ -1,7 +1,7 @@
 use regex::{Regex, RegexBuilder};
 
 pub struct SSEvent {
-    pub event: Option<String>,
+    pub name: Option<String>,
     pub data: String,
 }
 
@@ -30,8 +30,8 @@ impl SseConverter {
 
         let caps = self.sse_re.captures(&message).unwrap();
 
-        let event = caps.get(1).map(|m| m.as_str().to_owned());
+        let name = caps.get(1).map(|m| m.as_str().to_owned());
         let data = caps.get(2).unwrap().as_str().to_owned();
-        Some(SSEvent { event, data })
+        Some(SSEvent { name, data })
     }
 }

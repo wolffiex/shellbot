@@ -5,14 +5,24 @@ use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc::{self, Receiver, Sender};
 
+use crate::anthropic;
 use crate::openai;
 use crate::sse::SseConverter;
 
+pub enum ApiProvider {
+    OpenAI(String),
+    Anthropic(String),
+}
+
 // const MODEL: &str = "gpt-3.5-turbo";
-pub fn stream_response<'a>(api_key: &str, messages: Vec<ChatMessage>) -> Receiver<String> {
-    let client = openai::get_request(api_key, messages);
+pub fn stream_response<'a>(provider: ApiProvider, request: ChatRequest) -> Receiver<String> {
+    let request = match provider {
+        ApiProvider::OpenAI(api_key) => openai::get_request(&api_key, request),
+        ApiProvider::Anthropic(api_key) => anthropic::get_request(&api_key, request),
+    };
+    // let client2 = anthropic::get_request(api_key, messages);
     let (sender, receiver) = mpsc::channel(100);
-    tokio::spawn(async move { send_response(client, sender).await });
+    tokio::spawn(async move { send_response(request, sender).await });
     return receiver;
 }
 
@@ -64,13 +74,18 @@ fn convert_chunk(chunk: Bytes) -> String {
         .expect("Encoding error")
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+pub struct ChatRequest {
+    pub system_prompt: String,
+    pub transcript: Vec<ChatMessage>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ChatMessage {
     pub role: ChatRole,
     pub content: String,
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 #[serde(rename_all = "lowercase")]
 pub enum ChatRole {
     User,
