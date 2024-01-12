@@ -1,4 +1,7 @@
 mod api;
+mod openai;
+mod sse;
+
 use api::{stream_response, ChatMessage, ChatRole};
 
 use std::io::{stdin, Read};
