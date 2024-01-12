@@ -7,6 +7,7 @@ use tokio::sync::mpsc::{self, Receiver, Sender};
 
 use crate::anthropic;
 use crate::openai;
+use crate::sse::SSEvent;
 use crate::sse::SseConverter;
 
 pub enum ApiProvider {
@@ -14,22 +15,38 @@ pub enum ApiProvider {
     Anthropic(String),
 }
 
+#[derive(Clone, Copy)]
+enum ProviderType {
+    OpenAI,
+    Anthropic,
+}
+
+impl ApiProvider {
+    fn get_type(&self) -> ProviderType {
+        match self {
+            ApiProvider::OpenAI(_) => ProviderType::OpenAI,
+            ApiProvider::Anthropic(_) => ProviderType::Anthropic,
+        }
+    }
+}
+
 // const MODEL: &str = "gpt-3.5-turbo";
 pub fn stream_response<'a>(provider: ApiProvider, request: ChatRequest) -> Receiver<String> {
+    let provider_type: ProviderType = provider.get_type();
     let request = match provider {
         ApiProvider::OpenAI(api_key) => openai::get_request(&api_key, request),
         ApiProvider::Anthropic(api_key) => anthropic::get_request(&api_key, request),
     };
     // let client2 = anthropic::get_request(api_key, messages);
     let (sender, receiver) = mpsc::channel(100);
-    tokio::spawn(async move { send_response(request, sender).await });
+    tokio::spawn(async move { send_response(provider_type, request, sender).await });
     return receiver;
 }
 
-async fn send_response(client: RequestBuilder, sender: Sender<String>) {
+async fn send_response(provider: ProviderType, client: RequestBuilder, sender: Sender<String>) {
     let stream = client.send().await.expect("Request failed").bytes_stream();
     let buffer = Arc::new(Mutex::new(String::new()));
-    let sse_re = &SseConverter::new();
+    let sse_converter = &SseConverter::new();
 
     stream
         .map(|chunk_result| {
@@ -42,8 +59,8 @@ async fn send_response(client: RequestBuilder, sender: Sender<String>) {
                 locked_buffer.clear();
                 locked_buffer.push_str(&rest);
                 m.into_iter()
-                    .filter_map(|string_sse| sse_re.convert_sse(string_sse))
-                    .filter_map(openai::convert_sse)
+                    .filter_map(|string_sse| sse_converter.convert(string_sse))
+                    .filter_map(|sse| process_sse(provider, sse))
                     .collect::<Vec<_>>()
             }
         })
@@ -72,6 +89,13 @@ fn convert_chunk(chunk: Bytes) -> String {
     std::str::from_utf8(&chunk)
         .map(String::from)
         .expect("Encoding error")
+}
+
+fn process_sse(provider: ProviderType, event: SSEvent) -> Option<String> {
+    match provider {
+        ProviderType::Anthropic => anthropic::convert_sse(event),
+        ProviderType::OpenAI => openai::convert_sse(event),
+    }
 }
 
 pub struct ChatRequest {

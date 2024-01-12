@@ -37,7 +37,7 @@ pub fn get_request(api_key: &str, request: ChatRequest) -> RequestBuilder {
     client.post(url).headers(headers).json(&request)
 }
 
-fn convert_sse(event: SSEvent) -> Option<String> {
+pub fn convert_sse(event: SSEvent) -> Option<String> {
     match event.name {
         Some(name) if name == "content_block_delta" => {
             let parsed_data = serde_json::from_str::<ContentBlockDelta>(&event.data);

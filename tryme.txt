@@ -1,0 +1,12 @@
+===SYSTEM===
+Respond to all requests in French
+===USER===
+Say hello
+===ASSISSTANT===
+Beyel,lo
+===USER===
+That's not correct
+===ASSISSTANT===
+Entschuldigung, ich habe "Hello" falsch übersetzt. Auf Deutsch würde man typischerweise "Hallo" sagen, um jemanden zu begrüßen.
+===USER===
+What are you doing?
