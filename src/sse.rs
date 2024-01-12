@@ -22,7 +22,7 @@ impl SseConverter {
         SseConverter { sse_re }
     }
 
-    pub fn convert_sse(&self, message: String) -> Option<SSEvent> {
+    pub fn convert(&self, message: String) -> Option<SSEvent> {
         // Empty messages are ok
         if message == "" {
             return None;

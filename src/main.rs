@@ -12,11 +12,12 @@ use tokio::io::{stdout, AsyncWriteExt};
 
 #[tokio::main]
 async fn main() {
-    let api_key = std::env::var("OPENAI_API_KEY").expect("No API key provided");
     let request = structure_input();
-    // println!("{:?}", messages);
-
-    let mut receiver = stream_response(ApiProvider::OpenAI(api_key), request);
+    let provider = std::env::var("ANTHROPIC_API_KEY")
+        .map(ApiProvider::Anthropic)
+        .or_else(|_| std::env::var("OPENAI_API_KEY").map(ApiProvider::OpenAI))
+        .unwrap_or_else(|_| panic!("No API key provided"));
+    let mut receiver = stream_response(provider, request);
 
     let mut out = stdout();
     while let Some(token) = receiver.recv().await {
