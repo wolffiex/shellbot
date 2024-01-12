@@ -1,11 +1,16 @@
 use crate::sse::SSEvent;
-use crate::ChatMessage;
+use crate::{ChatMessage, ChatRequest, ChatRole};
 use reqwest::header::{HeaderMap, HeaderValue};
 use reqwest::{Client, RequestBuilder};
 use serde::{Deserialize, Serialize};
 
 const MODEL: &str = "gpt-4";
-pub fn get_request(api_key: &str, messages: Vec<ChatMessage>) -> RequestBuilder {
+pub fn get_request(api_key: &str, request: ChatRequest) -> RequestBuilder {
+    let mut messages = vec![ChatMessage {
+        role: ChatRole::System,
+        content: request.system_prompt,
+    }];
+    messages.extend_from_slice(&request.transcript);
     let client = Client::new();
     let url = "https://api.openai.com/v1/chat/completions";
     let mut headers = HeaderMap::new();
@@ -17,7 +22,7 @@ pub fn get_request(api_key: &str, messages: Vec<ChatMessage>) -> RequestBuilder 
         "Authorization",
         HeaderValue::from_str(&format!("Bearer {}", api_key)).unwrap(),
     );
-    let request = ChatRequest {
+    let request = RequestJSON {
         model: MODEL.to_string(),
         stream: true,
         messages,
@@ -35,7 +40,7 @@ pub fn convert_sse(event: SSEvent) -> Option<String> {
 }
 
 #[derive(Debug, Serialize)]
-struct ChatRequest {
+struct RequestJSON {
     model: String,
     stream: bool,
     messages: Vec<ChatMessage>,
