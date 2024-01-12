@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc::{self, Receiver, Sender};
 
 use crate::openai;
-use crate::sse::{convert_sse, get_sse_re};
+use crate::sse::SseConverter;
 
 // const MODEL: &str = "gpt-3.5-turbo";
 pub fn stream_response<'a>(api_key: &str, messages: Vec<ChatMessage>) -> Receiver<String> {
@@ -19,12 +19,11 @@ pub fn stream_response<'a>(api_key: &str, messages: Vec<ChatMessage>) -> Receive
 async fn send_response(client: RequestBuilder, sender: Sender<String>) {
     let stream = client.send().await.expect("Request failed").bytes_stream();
     let buffer = Arc::new(Mutex::new(String::new()));
-    let sse_re = Arc::new(get_sse_re());
+    let sse_re = &SseConverter::new();
 
     stream
         .map(|chunk_result| {
             let buffer = Arc::clone(&buffer);
-            let sse_re = Arc::clone(&sse_re);
             async move {
                 let result = chunk_result.expect("Stream error");
                 let mut locked_buffer = buffer.lock().unwrap();
@@ -33,7 +32,7 @@ async fn send_response(client: RequestBuilder, sender: Sender<String>) {
                 locked_buffer.clear();
                 locked_buffer.push_str(&rest);
                 m.into_iter()
-                    .filter_map(|string_sse| convert_sse(&*sse_re, string_sse))
+                    .filter_map(|string_sse| sse_re.convert_sse(string_sse))
                     .filter_map(openai::convert_sse)
                     .collect::<Vec<_>>()
             }

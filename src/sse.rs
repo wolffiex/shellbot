@@ -1,26 +1,37 @@
 use regex::{Regex, RegexBuilder};
 
-pub fn get_sse_re() -> Regex {
-    RegexBuilder::new(r"^(?:event:\s(\w+)\n)?data:\s(.*)$")
-        .multi_line(true)
-        .build()
-        .unwrap()
-}
-
 pub struct SSEvent {
     pub event: Option<String>,
     pub data: String,
 }
 
-pub fn convert_sse(re: &Regex, message: String) -> Option<SSEvent> {
-    // Empty messages are ok
-    if message == "" {
-        return None;
+use std::sync::Arc;
+
+pub struct SseConverter {
+    sse_re: Arc<Regex>,
+}
+
+impl SseConverter {
+    pub fn new() -> Self {
+        let sse_re = Arc::new(
+            RegexBuilder::new(r"^(?:event:\s(\w+)\n)?data:\s(.*)$")
+                .multi_line(true)
+                .build()
+                .expect("Failed to compile Regex."),
+        );
+        SseConverter { sse_re }
     }
 
-    let caps = re.captures(&message).unwrap();
+    pub fn convert_sse(&self, message: String) -> Option<SSEvent> {
+        // Empty messages are ok
+        if message == "" {
+            return None;
+        }
 
-    let event = caps.get(1).map(|m| m.as_str().to_owned());
-    let data = caps.get(2).unwrap().as_str().to_owned();
-    Some(SSEvent { event, data })
+        let caps = self.sse_re.captures(&message).unwrap();
+
+        let event = caps.get(1).map(|m| m.as_str().to_owned());
+        let data = caps.get(2).unwrap().as_str().to_owned();
+        Some(SSEvent { event, data })
+    }
 }
