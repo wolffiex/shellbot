@@ -47,7 +47,7 @@ async fn send_response(provider: ProviderType, client: RequestBuilder, sender: S
     let sse_converter = &SseConverter::new();
 
     stream
-        .map(|chunk_result, buffer| {
+        .map(|chunk_result| {
             let buffer = Arc::clone(&buffer);
             async move {
                 let result = chunk_result.expect("Stream error");
