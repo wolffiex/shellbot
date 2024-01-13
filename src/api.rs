@@ -14,33 +14,17 @@ pub enum ApiProvider {
     Anthropic(String),
 }
 
-#[derive(Clone, Copy)]
-enum ProviderType {
-    OpenAI,
-    Anthropic,
-}
-
-impl ApiProvider {
-    fn get_type(&self) -> ProviderType {
-        match self {
-            ApiProvider::OpenAI(_) => ProviderType::OpenAI,
-            ApiProvider::Anthropic(_) => ProviderType::Anthropic,
-        }
-    }
-}
-
 pub fn stream_response<'a>(provider: ApiProvider, request: ChatRequest) -> Receiver<String> {
-    let provider_type: ProviderType = provider.get_type();
     let request = match provider {
-        ApiProvider::OpenAI(api_key) => openai::get_request(&api_key, request),
-        ApiProvider::Anthropic(api_key) => anthropic::get_request(&api_key, request),
+        ApiProvider::OpenAI(ref api_key) => openai::get_request(&api_key, request),
+        ApiProvider::Anthropic(ref api_key) => anthropic::get_request(&api_key, request),
     };
     let (sender, receiver) = mpsc::channel(100);
-    tokio::spawn(async move { send_response(provider_type, request, sender).await });
+    tokio::spawn(async move { send_response(&provider, request, sender).await });
     return receiver;
 }
 
-async fn send_response(provider: ProviderType, client: RequestBuilder, sender: Sender<String>) {
+async fn send_response(provider: &ApiProvider, client: RequestBuilder, sender: Sender<String>) {
     let stream = client.send().await.expect("Request failed").bytes_stream();
     let mut buffer = String::new();
     let sse_converter = &SseConverter::new();
@@ -53,7 +37,7 @@ async fn send_response(provider: ProviderType, client: RequestBuilder, sender: S
             buffer = rest.to_string();
             m.into_iter()
                 .filter_map(|string_sse| sse_converter.convert(string_sse))
-                .filter_map(|sse| process_sse(provider, sse))
+                .filter_map(|sse| process_sse(&provider, sse))
                 .collect::<Vec<String>>()
                 .join("")
         })
@@ -79,10 +63,10 @@ fn convert_chunk(chunk: Bytes) -> String {
         .expect("Encoding error")
 }
 
-fn process_sse(provider: ProviderType, event: SSEvent) -> Option<String> {
+fn process_sse(provider: &ApiProvider, event: SSEvent) -> Option<String> {
     match provider {
-        ProviderType::Anthropic => anthropic::convert_sse(event),
-        ProviderType::OpenAI => openai::convert_sse(event),
+        ApiProvider::Anthropic(_) => anthropic::convert_sse(event),
+        ApiProvider::OpenAI(_) => openai::convert_sse(event),
     }
 }
 
