@@ -40,8 +40,9 @@ pub fn get_request(api_key: &str, request: ChatRequest) -> RequestBuilder {
 pub fn convert_sse(event: SSEvent) -> Option<String> {
     match event.name {
         Some(name) if name == "content_block_delta" => {
-            let parsed_data = serde_json::from_str::<ContentBlockDelta>(&event.data);
-            Some(parsed_data.unwrap().delta.text)
+            serde_json::from_str::<ContentBlockDelta>(&event.data)
+                .map(|data| Some(data.delta.text))
+                .unwrap_or_else(|err| panic!("Deserialization error {:?} in |{}|", err, event.data))
         }
         _ => None,
     }
