@@ -49,26 +49,23 @@ async fn send_response(provider: ProviderType, client: RequestBuilder, sender: S
     stream
         .map(|chunk_result| {
             let buffer = Arc::clone(&buffer);
-            async move {
-                let result = chunk_result.expect("Stream error");
-                let mut locked_buffer = buffer.lock().unwrap();
-                locked_buffer.push_str(&convert_chunk(result));
-                let (m, rest) = process_buffer(&locked_buffer);
-                locked_buffer.clear();
-                locked_buffer.push_str(&rest);
-                m.into_iter()
-                    .filter_map(|string_sse| sse_converter.convert(string_sse))
-                    .filter_map(|sse| process_sse(provider, sse))
-                    .collect::<Vec<_>>()
-            }
+            let result = chunk_result.expect("Stream error");
+            let mut locked_buffer = buffer.lock().unwrap();
+            locked_buffer.push_str(&convert_chunk(result));
+            let (m, rest) = process_buffer(&locked_buffer);
+            locked_buffer.clear();
+            locked_buffer.push_str(&rest);
+            m.into_iter()
+                .filter_map(|string_sse| sse_converter.convert(string_sse))
+                .filter_map(|sse| process_sse(provider, sse))
+                .collect::<Vec<String>>()
+                .join("")
         })
-        .for_each(|tokens| async {
-            for token in tokens.await {
-                sender
-                    .send(token)
-                    .await
-                    .unwrap_or_else(|_| panic!("Failed to send token"));
-            }
+        .for_each(|str| async {
+            sender
+                .send(str)
+                .await
+                .unwrap_or_else(|_| panic!("Failed to send token"));
         })
         .await;
 }
