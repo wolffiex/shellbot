@@ -7,11 +7,11 @@ pub struct SSEvent {
 
 use std::sync::Arc;
 
-pub struct SseConverter {
+pub struct SSEConverter {
     sse_re: Arc<Regex>,
 }
 
-impl SseConverter {
+impl SSEConverter {
     pub fn new() -> Self {
         let sse_re = Arc::new(
             RegexBuilder::new(r"^(?:event:\s(\w+)\n)?data:\s(.*)$")
@@ -19,7 +19,7 @@ impl SseConverter {
                 .build()
                 .expect("Failed to compile Regex."),
         );
-        SseConverter { sse_re }
+        SSEConverter { sse_re }
     }
 
     pub fn convert(&self, message: String) -> Option<SSEvent> {
