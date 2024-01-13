@@ -7,7 +7,7 @@ use tokio::sync::mpsc::{self, Receiver, Sender};
 use crate::anthropic;
 use crate::openai;
 use crate::sse::SSEvent;
-use crate::sse::SseConverter;
+use crate::sse::SSEConverter;
 
 pub enum ApiProvider {
     OpenAI(String),
@@ -27,7 +27,7 @@ pub fn stream_response<'a>(provider: ApiProvider, request: ChatRequest) -> Recei
 async fn send_response(provider: &ApiProvider, client: RequestBuilder, sender: Sender<String>) {
     let stream = client.send().await.expect("Request failed").bytes_stream();
     let mut buffer = String::new();
-    let sse_converter = &SseConverter::new();
+    let sse_converter = &SSEConverter::new();
 
     stream
         .map(|chunk_result| {
