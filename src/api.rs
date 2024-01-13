@@ -2,7 +2,6 @@ use bytes::Bytes;
 use futures::stream::StreamExt;
 use reqwest::RequestBuilder;
 use serde::{Deserialize, Serialize};
-use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc::{self, Receiver, Sender};
 
 use crate::anthropic;
@@ -43,18 +42,15 @@ pub fn stream_response<'a>(provider: ApiProvider, request: ChatRequest) -> Recei
 
 async fn send_response(provider: ProviderType, client: RequestBuilder, sender: Sender<String>) {
     let stream = client.send().await.expect("Request failed").bytes_stream();
-    let buffer = Arc::new(Mutex::new(String::new()));
+    let mut buffer = String::new();
     let sse_converter = &SseConverter::new();
 
     stream
         .map(|chunk_result| {
-            let buffer = Arc::clone(&buffer);
             let result = chunk_result.expect("Stream error");
-            let mut locked_buffer = buffer.lock().unwrap();
-            locked_buffer.push_str(&convert_chunk(result));
-            let (m, rest) = process_buffer(&locked_buffer);
-            locked_buffer.clear();
-            locked_buffer.push_str(&rest);
+            buffer.push_str(&convert_chunk(result));
+            let (m, rest) = process_buffer(&buffer);
+            buffer = rest.to_string();
             m.into_iter()
                 .filter_map(|string_sse| sse_converter.convert(string_sse))
                 .filter_map(|sse| process_sse(provider, sse))
@@ -62,10 +58,7 @@ async fn send_response(provider: ProviderType, client: RequestBuilder, sender: S
                 .join("")
         })
         .for_each(|str| async {
-            sender
-                .send(str)
-                .await
-                .unwrap_or_else(|_| panic!("Failed to send token"));
+            sender.send(str).await.expect("Failed to send token");
         })
         .await;
 }
