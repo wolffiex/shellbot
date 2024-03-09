@@ -11,10 +11,7 @@ The Rust program can be built with `cargo build`. It expects an `OPENAI_API_KEY`
 In this case, a System prompt is provided in the compiled code
 2. Transcript
 The Rust program also accepts a homegrown "transcript" format in which transcript sections are delineated by lines which look like this
-<<<<<<< HEAD
-=======
 
->>>>>>> abe1c29 (README update)
 ```
 ===USER===
 ```
