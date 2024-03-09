@@ -6,9 +6,12 @@ AI assistants are transformational for programmers. However, ChatGPT 4 is also r
 
 
 ## Rust program
-The Rust program can be built with `cargo build`. It expects an `OPENAI_API_KEY` environment variable. The Rust program can take two kinds of input, read from stdin:
-1. **Raw input:** In this case, a System prompt is provided in the compiled code
-3. **Transcript:** The Rust program also accepts a homegrown "transcript" format in which transcript sections are delineated by lines which look like this
+The Rust program can be built with `cargo build`. It expects an `OPENAI_API_KEY` and/or an `ANTHROPIC_API_KEY` environment variable. If both keys are provided, Anthropic is used. The Rust program can take two kinds of input, read from stdin:
+1. Raw input
+In this case, a System prompt is provided in the compiled code
+2. Transcript
+The Rust program also accepts a homegrown "transcript" format in which transcript sections are delineated by lines which look like this
+
 ```
 ===USER===
 ```
