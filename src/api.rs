@@ -45,6 +45,11 @@ async fn send_response(provider: &ApiProvider, client: RequestBuilder, sender: S
             sender.send(str).await.expect("Failed to send token");
         })
         .await;
+
+    // If there's any remaining content in the buffer, it's an error
+    if !buffer.is_empty() {
+        eprintln!("{}", buffer);
+    }
 }
 
 fn process_buffer(input: &String) -> (Vec<String>, String) {
