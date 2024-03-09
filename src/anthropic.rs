@@ -32,7 +32,7 @@ pub fn get_request(api_key: &str, request: ChatRequest) -> RequestBuilder {
         system: request.system_prompt,
         messages: request.transcript,
         stream: true,
-        max_tokens: 512,
+        max_tokens: 2048,
     };
     client.post(url).headers(headers).json(&request)
 }
@@ -44,7 +44,24 @@ pub fn convert_sse(event: SSEvent) -> Option<String> {
                 .map(|data| Some(data.delta.text))
                 .unwrap_or_else(|err| panic!("Deserialization error {:?} in |{}|", err, event.data))
         }
-        _ => None,
+        Some(name)
+            if matches!(
+                &*name,
+                "message_start"
+                    | "content_block_start"
+                    | "ping"
+                    | "message_stop"
+                    | "content_block_stop"
+                    | "message_delta"
+            ) =>
+        {
+            None
+        }
+        _ => {
+            eprintln!("n {:?}", event.name);
+            eprintln!("d {:?}", event.data);
+            None
+        }
     }
 }
 
