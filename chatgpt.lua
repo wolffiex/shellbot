@@ -2,9 +2,7 @@ local M = {}
 local is_receiving = false
 
 local gpt_cmd = os.getenv("SHELLBOT")
--- local gpt_cmd = "cat"
-local ns_vimbot = vim.api.nvim_create_namespace("vimbot")
-
+local separator = "==="
 
 local roles = {
   USER = "◭🧑 " .. os.getenv('USER'),
@@ -94,10 +92,10 @@ function ChatGPTSubmit()
     ChatGPTCancelJob = nil
   end
 
-  local function get_transcript(separator)
+  local function get_transcript()
     local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
     for i, line in ipairs(lines) do
-      if line:match("^◭") then  -- '^' means start of line
+      if line:match("^◭") then -- '^' means start of line
         lines[i] = separator .. "USER" .. separator
       elseif line:match("^◮") then
         lines[i] = separator .. "ASSISTANT" .. separator
@@ -106,9 +104,63 @@ function ChatGPTSubmit()
     return lines
   end
 
+  local function generate_buffer_name(user_input)
+    local summary_prompt = "Your role is to summarize the topic of a user prompt " ..
+      "to an AI assistant. Respond with a plain text string that summarizes the " ..
+      "user input. Don't include special characters. Make your response shorter than 50 characters."
+    local async_handle = vim.loop.new_async(vim.schedule_wrap(function()
+      local output = {}
+
+      local job_id = vim.fn.jobstart(gpt_cmd, {
+        on_stdout = function(_, data, _)
+          if data[1] ~= "" then
+            table.insert(output, data[1])
+          end
+        end,
+        on_exit = function()
+          -- Process the response and set the buffer name
+          local response = table.concat(output, "")
+          vim.api.nvim_buf_set_name(bufnr, response)
+        end
+      })
+
+      vim.fn.chansend(job_id, separator .. "System" .. separator .. "\n")
+      vim.fn.chansend(job_id, summary_prompt .. "\n")
+      vim.fn.chansend(job_id, separator .. "USER" .. separator .. "\n")
+      vim.fn.chansend(job_id, user_input .. "\n")
+      vim.fn.chanclose(job_id, "stdin")
+    end))
+    async_handle:send()
+  end
+
+
+  local function get_user_input(transcript)
+    local user_input = {}
+    local is_user_input = false
+
+    for _, line in ipairs(transcript) do
+      if line == separator .. "USER" .. separator then
+        is_user_input = true
+      elseif line == separator .. "ASSISTANT" .. separator then
+        if is_user_input then
+          break
+        end
+      elseif is_user_input then
+        table.insert(user_input, line)
+      end
+    end
+
+    return table.concat(user_input, "\n")
+  end
+
   local job_id = vim.fn.jobstart(gpt_cmd, {
     on_stdout = receive_stream,
-    on_exit = stream_done
+    on_exit = stream_done,
+    on_stderr = function(_, data, _)
+      for _, str in ipairs(data) do
+        vim.api.nvim_echo({{str, "ErrorMsg"}}, true, {})
+      end
+    end,
   })
 
   if job_id > 0 then
@@ -118,7 +170,14 @@ function ChatGPTSubmit()
       vim.fn.jobstop(job_id)
     end
     is_receiving = true
-    local transcript = get_transcript("===")
+    local transcript = get_transcript()
+    -- Set the buffer name if it's unnamed
+    local buf_name = vim.api.nvim_buf_get_name(bufnr)
+    if buf_name == "" then
+      local user_input = get_user_input(transcript)
+      generate_buffer_name(user_input)
+    end
+
     for _, line in ipairs(transcript) do
       vim.fn.chansend(job_id, line .. "\n")
       -- print(line)
@@ -154,10 +213,10 @@ function ChatGPTInit()
   vim.wo.breakindent = true
   vim.wo.wrap = true
   vim.wo.linebreak = true
-  vim.api.nvim_buf_set_option(bufnr, 'buftype', 'nofile')
-  vim.api.nvim_buf_set_option(bufnr, 'bufhidden', 'hide')
-  vim.api.nvim_buf_set_option(bufnr, 'swapfile', false)
   vim.api.nvim_buf_set_option(bufnr, 'filetype', 'shellbot')
+  vim.api.nvim_buf_set_option(bufnr, 'buftype', 'nofile')
+  vim.api.nvim_buf_set_option(bufnr, 'buflisted', true)
+  vim.api.nvim_buf_set_option(bufnr, 'modified', false)
   add_transcript_header(winnr, bufnr, "USER", 0)
   local modes = { 'n', 'i' }
   for _, mode in ipairs(modes) do
