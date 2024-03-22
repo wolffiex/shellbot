@@ -25,7 +25,7 @@ async fn main() {
         out.flush().await.unwrap();
     }
     // Append newline to end of output
-    println!();
+    out.write_all(b"\n").await.unwrap();
 }
 
 fn get_default_prompt() -> String {
