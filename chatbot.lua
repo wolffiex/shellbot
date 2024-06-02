@@ -1,7 +1,7 @@
 local M = {}
 local is_receiving = false
 
-local gpt_cmd = os.getenv("SHELLBOT")
+local bot_cmd = os.getenv("SHELLBOT")
 local separator = "==="
 
 local roles = {
@@ -10,7 +10,7 @@ local roles = {
 }
 
 local buffer_sync_cursor = {}
-function ChatGPTCancelCursorSync()
+function ChatBotCancelCursorSync()
   local bufnr = vim.api.nvim_get_current_buf()
   buffer_sync_cursor[bufnr] = false
   vim.api.nvim_buf_del_keymap(bufnr, 'n', '<Enter>')
@@ -34,8 +34,8 @@ local function add_transcript_header(winnr, bufnr, role, line_num)
   return line
 end
 
-local ChatGPTCancelJob = nil
-function ChatGPTSubmit()
+local ChatBotCancelJob = nil
+function ChatBotSubmit()
   if is_receiving then
     print("Already receiving")
     return
@@ -89,7 +89,7 @@ function ChatGPTSubmit()
     end
     add_transcript_header(winnr, bufnr, "USER")
     is_interrupted = false
-    ChatGPTCancelJob = nil
+    ChatBotCancelJob = nil
   end
 
   local function get_transcript()
@@ -111,7 +111,7 @@ function ChatGPTSubmit()
     local async_handle = vim.loop.new_async(vim.schedule_wrap(function()
       local output = {}
 
-      local job_id = vim.fn.jobstart(gpt_cmd, {
+      local job_id = vim.fn.jobstart(bot_cmd, {
         on_stdout = function(_, data, _)
           if data[1] ~= "" then
             table.insert(output, data[1])
@@ -153,7 +153,7 @@ function ChatGPTSubmit()
     return table.concat(user_input, "\n")
   end
 
-  local job_id = vim.fn.jobstart(gpt_cmd, {
+  local job_id = vim.fn.jobstart(bot_cmd, {
     on_stdout = receive_stream,
     on_exit = stream_done,
     on_stderr = function(_, data, _)
@@ -164,9 +164,9 @@ function ChatGPTSubmit()
   })
 
   if job_id > 0 then
-    ChatGPTCancelJob = function()
+    ChatBotCancelJob = function()
       is_interrupted = true
-      ChatGPTCancelJob = nil
+      ChatBotCancelJob = nil
       vim.fn.jobstop(job_id)
     end
     is_receiving = true
@@ -188,11 +188,11 @@ function ChatGPTSubmit()
     vim.fn.chanclose(job_id, "stdin")
     vim.api.nvim_command('stopinsert')
     vim.api.nvim_buf_set_keymap(bufnr, 'n', '<Enter>',
-      ':lua ChatGPTCancelCursorSync()<cr>', { noremap = true, silent = true })
+      ':lua ChatBotCancelCursorSync()<cr>', { noremap = true, silent = true })
     vim.api.nvim_buf_set_keymap(bufnr, 'n', '<Space>',
-      ':lua ChatGPTCancelCursorSync()<cr>', { noremap = true, silent = true })
+      ':lua ChatBotCancelCursorSync()<cr>', { noremap = true, silent = true })
     vim.api.nvim_buf_set_keymap(bufnr, 'n', '<C-c>',
-      ':lua ChatGPTCancelResponse()<cr>', { noremap = true, silent = true })
+      ':lua ChatBotCancelResponse()<cr>', { noremap = true, silent = true })
   else
     print("Failed to start command")
   end
@@ -201,12 +201,12 @@ function ChatGPTSubmit()
   end
 end
 
-function ChatGPTNewBuf()
+function ChatBotNewBuf()
   vim.cmd("enew")
-  ChatGPTInit()
+  ChatBotInit()
 end
 
-function ChatGPTInit()
+function ChatBotInit()
   local winnr = vim.api.nvim_get_current_win()
   local bufnr = vim.api.nvim_get_current_buf()
   buffer_sync_cursor[bufnr] = true
@@ -220,27 +220,27 @@ function ChatGPTInit()
   add_transcript_header(winnr, bufnr, "USER", 0)
   local modes = { 'n', 'i' }
   for _, mode in ipairs(modes) do
-    vim.api.nvim_buf_set_keymap(bufnr, mode, '<C-Enter>', '<ESC>:lua ChatGPTSubmit()<CR>',
+    vim.api.nvim_buf_set_keymap(bufnr, mode, '<C-Enter>', '<ESC>:lua ChatBotSubmit()<CR>',
       { noremap = true, silent = true })
-    vim.api.nvim_buf_set_keymap(bufnr, mode, '<C-o>', '<ESC>:lua ChatGPTNewBuf()<CR>',
+    vim.api.nvim_buf_set_keymap(bufnr, mode, '<C-o>', '<ESC>:lua ChatBotNewBuf()<CR>',
       { noremap = true, silent = true })
   end
 end
 
-function M.chatgpt()
+function M.chatbot()
   vim.cmd("botright vnew")
   vim.cmd("set winfixwidth")
   vim.cmd("vertical resize 60")
-  ChatGPTInit()
+  ChatBotInit()
 end
 
-function M.chatgpt_init()
-  ChatGPTInit()
+function M.chatbot_init()
+  ChatBotInit()
 end
 
-function ChatGPTCancelResponse()
-  if ChatGPTCancelJob then
-    ChatGPTCancelJob()
+function ChatBotCancelResponse()
+  if ChatBotCancelJob then
+    ChatBotCancelJob()
   end
 end
 
