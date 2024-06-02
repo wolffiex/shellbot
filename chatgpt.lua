@@ -124,7 +124,7 @@ function ChatGPTSubmit()
         end
       })
 
-      vim.fn.chansend(job_id, separator .. "System" .. separator .. "\n")
+      vim.fn.chansend(job_id, separator .. "SYSTEM" .. separator .. "\n")
       vim.fn.chansend(job_id, summary_prompt .. "\n")
       vim.fn.chansend(job_id, separator .. "USER" .. separator .. "\n")
       vim.fn.chansend(job_id, user_input .. "\n")
