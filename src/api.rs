@@ -1,13 +1,14 @@
 use bytes::Bytes;
 use futures::stream::StreamExt;
+use log::debug;
 use reqwest::RequestBuilder;
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::{self, Receiver, Sender};
 
 use crate::anthropic;
 use crate::openai;
-use crate::sse::SSEvent;
 use crate::sse::SSEConverter;
+use crate::sse::SSEvent;
 
 pub enum ApiProvider {
     OpenAI(String),
@@ -24,7 +25,34 @@ pub fn stream_response<'a>(provider: ApiProvider, request: ChatRequest) -> Recei
     return receiver;
 }
 
+fn debug_request(client: RequestBuilder) {
+    let cloned_request = client.build().unwrap();
+    // Print request details
+    debug!("Request details:");
+    debug!("  Method: {}", cloned_request.method());
+    debug!("  URL: {}", cloned_request.url());
+    debug!("  Headers:");
+    for (name, value) in cloned_request.headers() {
+        debug!("    {}: {:?}", name, value);
+    }
+
+    if let Some(body) = cloned_request.body() {
+        debug!("  Body:");
+        let body_string = body
+            .as_bytes()
+            .and_then(|bytes| std::str::from_utf8(bytes).ok());
+        if let Some(body_text) = body_string {
+            debug!("    {}", body_text);
+        } else {
+            debug!("    (non-UTF-8 or empty body)");
+        }
+    } else {
+        debug!("    (no body)");
+    }
+}
+
 async fn send_response(provider: &ApiProvider, client: RequestBuilder, sender: Sender<String>) {
+    debug_request(client.try_clone().unwrap());
     let stream = client.send().await.expect("Request failed").bytes_stream();
     let mut buffer = String::new();
     let sse_converter = &SSEConverter::new();
@@ -75,6 +103,7 @@ fn process_sse(provider: &ApiProvider, event: SSEvent) -> Option<String> {
     }
 }
 
+#[derive(Debug)]
 pub struct ChatRequest {
     pub system_prompt: String,
     pub transcript: Vec<ChatMessage>,
