@@ -1,3 +1,4 @@
+use std::fs::File;
 mod anthropic;
 mod api;
 mod openai;
@@ -43,46 +44,62 @@ fn structure_input() -> ChatRequest {
     stdin().read_to_string(&mut input).unwrap();
     let mut lines_iter = input.lines();
     let first_line = lines_iter.next().unwrap();
+    let args: Vec<String> = std::env::args().collect();
+    let system_prompt = if args.len() > 1 {
+        let file_path = &args[1];
+        println!("FILE {:?}", file_path);
+        let mut file = File::open(file_path).unwrap_or_else(|_| {
+            panic!("Failed to open file: {}", file_path);
+        });
+        let mut contents = String::new();
+        file.read_to_string(&mut contents).unwrap();
+        println!("contents {:?}", contents);
+        contents
+    } else {
+        get_default_prompt()
+    };
+
     match match_separator(first_line) {
         None => ChatRequest {
-            system_prompt: get_default_prompt(),
+            system_prompt,
             transcript: vec![ChatMessage {
                 role: ChatRole::User,
                 content: input,
             }],
         },
-        Some(first_role) => parse_transcript(first_role, lines_iter),
+        Some(first_role) => {
+            let mut transcript = parse_transcript(first_role, lines_iter);
+            let system_prompt = if transcript.get(0).unwrap().role == ChatRole::System {
+                transcript.remove(0).content
+            } else {
+                system_prompt
+            };
+            ChatRequest {
+                system_prompt,
+                transcript,
+            }
+        }
     }
 }
 
-fn parse_transcript(first_role: ChatRole, lines: Lines) -> ChatRequest {
+fn parse_transcript(first_role: ChatRole, lines: Lines) -> Vec<ChatMessage> {
     let new_message = |role: ChatRole| ChatMessage {
         role,
         content: String::new(),
     };
-    let mut transcript = lines.into_iter().fold(
+    lines.into_iter().fold(
         vec![new_message(first_role)],
         |mut acc: Vec<ChatMessage>, line| {
             match match_separator(line) {
                 Some(role) => acc.push(new_message(role)),
                 None => {
                     let last = acc.last_mut().unwrap();
-                    last.content = format!("{}{}\n", last.content, line)
+                    last.content = format!("{}{}", last.content, line)
                 }
             }
             acc
         },
-    );
-
-    let system_prompt = if transcript.get(0).unwrap().role == ChatRole::System {
-        transcript.remove(0).content
-    } else {
-        get_default_prompt()
-    };
-    ChatRequest {
-        system_prompt,
-        transcript,
-    }
+    )
 }
 
 fn match_separator(line: &str) -> Option<ChatRole> {
