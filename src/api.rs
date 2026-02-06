@@ -11,14 +11,18 @@ use crate::sse::SSEConverter;
 use crate::sse::SSEvent;
 
 pub enum ApiProvider {
-    OpenAI(String),
-    Anthropic(String),
+    OpenAI(String, String),
+    Anthropic(String, String),
 }
 
 pub fn stream_response<'a>(provider: ApiProvider, request: ChatRequest) -> Receiver<String> {
     let request = match provider {
-        ApiProvider::OpenAI(ref api_key) => openai::get_request(&api_key, request),
-        ApiProvider::Anthropic(ref api_key) => anthropic::get_request(&api_key, request),
+        ApiProvider::OpenAI(ref api_key, ref model) => {
+            openai::get_request(&api_key, &model, request)
+        }
+        ApiProvider::Anthropic(ref api_key, ref model) => {
+            anthropic::get_request(&api_key, &model, request)
+        }
     };
     let (sender, receiver) = mpsc::channel(100);
     tokio::spawn(async move { send_response(&provider, request, sender).await });
@@ -98,8 +102,8 @@ fn convert_chunk(chunk: Bytes) -> String {
 
 fn process_sse(provider: &ApiProvider, event: SSEvent) -> Option<String> {
     match provider {
-        ApiProvider::Anthropic(_) => anthropic::convert_sse(event),
-        ApiProvider::OpenAI(_) => openai::convert_sse(event),
+        ApiProvider::Anthropic(_, _) => anthropic::convert_sse(event),
+        ApiProvider::OpenAI(_, _) => openai::convert_sse(event),
     }
 }
 

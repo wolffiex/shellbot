@@ -4,10 +4,13 @@ local is_receiving = false
 local bot_cmd = os.getenv("SHELLBOT")
 local separator = "==="
 
+local nbsp = ' '
 local roles = {
-  USER = "◭🧑 " .. os.getenv('USER'),
-  ASSISTANT = "◮🤖 vimbot",
+  USER = nbsp .. "🤓 «" .. os.getenv('USER') .. "»" .. nbsp,
+  ASSISTANT = nbsp .. "🤖 «vimbot»" .. nbsp,
 }
+
+local buffer_env = {}
 
 local buffer_sync_cursor = {}
 function ChatBotCancelCursorSync()
@@ -43,6 +46,10 @@ function ChatBotSubmit()
   vim.cmd("normal! Go")
   local winnr = vim.api.nvim_get_current_win()
   local bufnr = vim.api.nvim_get_current_buf()
+  local env = buffer_env[bufnr] and vim.tbl_extend('keep', buffer_env[bufnr], {
+    SHELLBOT_LOG_FILE = vim.env['SHELLBOT_LOG_FILE'],
+  })
+  local clear_env = not not env
   buffer_sync_cursor[bufnr] = true
   local function receive_stream(_, data, _)
     if #data > 1 or data[1] ~= '' then
@@ -95,9 +102,9 @@ function ChatBotSubmit()
   local function get_transcript()
     local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
     for i, line in ipairs(lines) do
-      if line:match("^◭") then -- '^' means start of line
+      if line:match('^' .. nbsp .. '🤓') then  -- '^' means start of line
         lines[i] = separator .. "USER" .. separator
-      elseif line:match("^◮") then
+      elseif line:match('^' .. nbsp ..'🤖') then
         lines[i] = separator .. "ASSISTANT" .. separator
       end
     end
@@ -112,6 +119,8 @@ function ChatBotSubmit()
       local output = {}
 
       local job_id = vim.fn.jobstart(bot_cmd, {
+        clear_env = clear_env,
+        env = env,
         on_stdout = function(_, data, _)
           if data[1] ~= "" then
             table.insert(output, data[1])
@@ -154,6 +163,8 @@ function ChatBotSubmit()
   end
 
   local job_id = vim.fn.jobstart(bot_cmd, {
+    clear_env = clear_env,
+    env = env,
     on_stdout = receive_stream,
     on_exit = stream_done,
     on_stderr = function(_, data, _)
@@ -202,40 +213,25 @@ function ChatBotSubmit()
 end
 
 function ChatBotNewBuf()
+  local bufnr = vim.api.nvim_get_current_buf()
   vim.cmd("enew")
-  ChatBotInit()
+  ChatBotInit(buffer_env[bufnr])
 end
 
-function ChatBotInit()
+function ChatBotInit(env)
   local winnr = vim.api.nvim_get_current_win()
   local bufnr = vim.api.nvim_get_current_buf()
+  buffer_env[bufnr] = env
   buffer_sync_cursor[bufnr] = true
-  vim.wo.breakindent = true
-  vim.wo.wrap = true
-  vim.wo.linebreak = true
-  vim.api.nvim_buf_set_option(bufnr, 'filetype', 'shellbot')
-  vim.api.nvim_buf_set_option(bufnr, 'buftype', 'nofile')
-  vim.api.nvim_buf_set_option(bufnr, 'buflisted', true)
-  vim.api.nvim_buf_set_option(bufnr, 'modified', false)
+  vim.api.nvim_set_option_value('filetype', 'shellbot', { buf = bufnr })
   add_transcript_header(winnr, bufnr, "USER", 0)
-  local modes = { 'n', 'i' }
-  for _, mode in ipairs(modes) do
-    vim.api.nvim_buf_set_keymap(bufnr, mode, '<C-Enter>', '<ESC>:lua ChatBotSubmit()<CR>',
-      { noremap = true, silent = true })
-    vim.api.nvim_buf_set_keymap(bufnr, mode, '<C-o>', '<ESC>:lua ChatBotNewBuf()<CR>',
-      { noremap = true, silent = true })
-  end
 end
 
-function M.chatbot()
+function M.chatbot(env)
   vim.cmd("botright vnew")
   vim.cmd("set winfixwidth")
   vim.cmd("vertical resize 60")
-  ChatBotInit()
-end
-
-function M.chatbot_init()
-  ChatBotInit()
+  ChatBotInit(env)
 end
 
 function ChatBotCancelResponse()
